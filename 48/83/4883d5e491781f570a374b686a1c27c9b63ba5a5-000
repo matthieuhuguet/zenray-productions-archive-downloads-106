@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base href="file:///Users/zenray/Downloads/tmp-thewitcher3-artdirection/">
+  <title>Template Creator</title>
+  <link rel="stylesheet" href="assets/photo-controls/zr-photo-adjustments.css">
+  <style>
+    @font-face { font-family: AnthropicSerif; src: url("file:///Users/zenray/Library/Fonts/AnthropicSerif-Regular.ttf"); font-weight: 400; }
+    @font-face { font-family: AnthropicMono; src: url("file:///Users/zenray/Library/Fonts/AnthropicMono-Regular.ttf"); font-weight: 400; }
+    @font-face { font-family: Inter; src: url("file:///Users/zenray/Library/Fonts/InterVariable.ttf"); font-weight: 100 900; }
+    @font-face { font-family: Cinzel; src: url("assets/fonts/Cinzel-Variable.ttf"); font-weight: 400 900; }
+    :root {
+      --zr-primary-x: 836;
+      --zr-primary-y: 503;
+      --zr-primary-size: 42;
+      --zr-primary-tracking: 10.8;
+      --zr-secondary-x: 836;
+      --zr-secondary-y: 458;
+      --zr-secondary-size: 25;
+      --zr-secondary-tracking: 8;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; min-height: 100%; margin: 0; background: #0b0c0f; }
+    body { display: grid; place-items: center; color: white; font-family: Inter, sans-serif; }
+    .stage {
+      position: relative;
+      width: min(100vw, calc(100vh * var(--zr-canvas-ratio)));
+      aspect-ratio: var(--zr-canvas-ratio);
+      overflow: hidden;
+      background: black;
+    }
+    #photo,
+    #text-layers {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+    #source { display: none; }
+    #text-layers { overflow: visible; pointer-events: none; }
+    #primary-text,
+    #secondary-text,
+    #editorial-text {
+      fill: var(--zr-text-color, #f0ede5);
+      paint-order: stroke fill;
+      stroke: rgba(0, 0, 0, 0.18);
+      stroke-width: 0.35px;
+      text-shadow: var(--zr-text-shadow, 0 1px 2px rgba(0,0,0,0.46));
+      text-anchor: middle;
+    }
+    #primary-text { font-family: var(--zr-primary-family, Cinzel); font-weight: var(--zr-primary-weight, 400); }
+    #secondary-text { font-family: var(--zr-secondary-family, Cinzel); font-weight: var(--zr-secondary-weight, 400); }
+    #editorial-text { font-family: Cinzel; }
+    #editorial-divider,
+    #editorial-diamond { stroke: var(--zr-text-color, #f0ede5); fill: none; }
+    .zr-photo-panel .template-fields { padding-bottom: 10px; }
+    .zr-photo-panel .template-fields input[type="text"] {
+      width: 100%;
+      min-height: 34px;
+      padding: 7px 9px;
+      border: 0;
+      border-radius: 8px;
+      background: #3a3a3a;
+      color: white;
+      font: 13px Inter, sans-serif;
+    }
+    html.render body { display: block; }
+    html.render .stage { width: var(--zr-canvas-width); height: var(--zr-canvas-height); }
+  </style>
+</head>
+<body>
+  <main class="stage" id="stage">
+    <img id="source" alt="">
+    <canvas id="photo"></canvas>
+    <svg id="text-layers" xmlns="http://www.w3.org/2000/svg">
+      <text id="primary-text"></text>
+      <text id="secondary-text"></text>
+      <g id="editorial-layer" hidden>
+        <line id="editorial-divider"></line>
+        <path id="editorial-diamond"></path>
+        <text id="editorial-text"></text>
+      </g>
+    </svg>
+  </main>
+
+  <aside class="zr-photo-panel" aria-label="Réglages du template">
+    <h2>Template Creator</h2>
+    <div class="template-fields">
+      <div class="zr-photo-grid">
+        <label>Texte principal<input id="primary-input" type="text"></label>
+        <label>Texte secondaire<input id="secondary-input" type="text"></label>
+      </div>
+      <div id="text-controls" class="zr-photo-grid"></div>
+    </div>
+    <details open>
+      <summary>Vignette</summary>
+      <div id="vignette-controls" class="zr-photo-grid"></div>
+    </details>
+    <details>
+      <summary>Selective Color</summary>
+      <div id="selective-tabs" class="zr-photo-color-tabs"></div>
+      <div id="selective-controls" class="zr-photo-grid"></div>
+    </details>
+    <details>
+      <summary>Levels</summary>
+      <div id="levels-controls" class="zr-photo-grid"></div>
+    </details>
+    <details>
+      <summary>Black and White</summary>
+      <div id="black-white-controls" class="zr-photo-grid"></div>
+    </details>
+    <details>
+      <summary>Color</summary>
+      <div id="color-controls" class="zr-photo-grid"></div>
+    </details>
+    <details open>
+      <summary>Light</summary>
+      <div id="light-controls" class="zr-photo-grid"></div>
+    </details>
+    <details>
+      <summary>Filters</summary>
+      <div id="filter-buttons" class="zr-photo-filter-grid"></div>
+      <div id="filter-controls" class="zr-photo-grid"></div>
+    </details>
+    <div class="zr-photo-actions">
+      <button id="reset" type="button">Réinitialiser</button>
+      <button id="copy" type="button">Copier les valeurs</button>
+    </div>
+    <p id="status" class="zr-photo-status" role="status"></p>
+  </aside>
+
+  <script src="assets/photo-controls/zr-photo-adjustments.js"></script>
+  <script>
+    "use strict";
+    const CONFIG = {"canvas": {"width": 1672, "height": 941}, "background": "/Users/zenray/Downloads/tmp-thewitcher3-artdirection/assets/background-02-enhanced-combat-clean.png", "template_id": "single_center", "primary_text": "ENHANCED COMBAT", "secondary_text": "", "primary": {"font_url": "file:///Users/zenray/Library/Fonts/AnthropicSerif-Regular.ttf", "font_family": "AnthropicSerif", "font_size": 42, "font_weight": 400, "letter_spacing": 10.8, "anchor_x": 841, "baseline_y": 503, "color": "#f0ede5", "shadow": "0 1px 2px rgba(0,0,0,0.46)"}, "secondary": null, "photo": {"vignette": 0, "selective": [{"hue": 0, "saturation": 0, "luminance": 0}, {"hue": 0, "saturation": 0, "luminance": 0}, {"hue": 0, "saturation": 0, "luminance": 0}, {"hue": 0, "saturation": 0, "luminance": 0}, {"hue": 0, "saturation": 0, "luminance": 0}, {"hue": 0, "saturation": 0, "luminance": 0}], "levels": {"inputBlack": 0, "midtone": 50, "inputWhite": 100, "outputBlack": 0, "outputWhite": 100}, "blackAndWhite": 0, "saturation": 0, "vibrance": 0, "brilliance": 0, "exposure": 0, "highlights": 0, "shadows": 0, "brightness": 0, "contrast": 0, "blackPoint": 0, "filter": "Original", "filterStrength": 100}, "output": "out/template-previews/generated-template.png"};
+    const root = document.documentElement;
+    const canvas = document.querySelector("#photo");
+    const source = document.querySelector("#source");
+    const primaryText = document.querySelector("#primary-text");
+    const secondaryText = document.querySelector("#secondary-text");
+    const editorialLayer = document.querySelector("#editorial-layer");
+    const editorialDivider = document.querySelector("#editorial-divider");
+    const editorialDiamond = document.querySelector("#editorial-diamond");
+    const editorialText = document.querySelector("#editorial-text");
+    const status = document.querySelector("#status");
+    const processor = new ZRPhotoAdjustments(canvas);
+    const filterNames = ZRPhotoAdjustments.filters();
+    const channelNames = ["Rouge", "Jaune", "Vert", "Cyan", "Bleu", "Magenta"];
+    let selectedChannel = 0;
+    let selectedFilter = CONFIG.photo.filter;
+    let framePending = false;
+
+    root.style.setProperty("--zr-canvas-width", `${CONFIG.canvas.width}px`);
+    root.style.setProperty("--zr-canvas-height", `${CONFIG.canvas.height}px`);
+    root.style.setProperty("--zr-canvas-ratio", CONFIG.canvas.width / CONFIG.canvas.height);
+    document.querySelector("#text-layers").setAttribute("viewBox", `0 0 ${CONFIG.canvas.width} ${CONFIG.canvas.height}`);
+
+    function setVariable(name, value) {
+      root.style.setProperty(name, String(value));
+    }
+
+    function getVariable(name) {
+      return Number.parseFloat(getComputedStyle(root).getPropertyValue(name));
+    }
+
+    function slider(parent, label, variable, min, max, value, step = 1) {
+      const row = document.createElement("label");
+      row.className = "zr-photo-control";
+      const name = document.createElement("span");
+      name.textContent = label;
+      const input = document.createElement("input");
+      input.type = "range";
+      input.min = min;
+      input.max = max;
+      input.step = step;
+      input.value = value;
+      input.dataset.variable = variable;
+      const output = document.createElement("output");
+      output.value = Math.round(Number(value));
+      input.addEventListener("input", () => {
+        setVariable(variable, input.value);
+        output.value = Math.round(Number(input.value));
+        scheduleRender();
+      });
+      row.append(name, input, output);
+      parent.append(row);
+      setVariable(variable, value);
+      return { input, output };
+    }
+
+    function makeControls() {
+      const text = document.querySelector("#text-controls");
+      slider(text, "Principal X", "--zr-primary-x", 0, CONFIG.canvas.width, CONFIG.primary.anchor_x);
+      slider(text, "Principal Y", "--zr-primary-y", 0, CONFIG.canvas.height, CONFIG.primary.baseline_y);
+      slider(text, "Taille", "--zr-primary-size", 8, 240, CONFIG.primary.font_size);
+      slider(text, "Interlettrage", "--zr-primary-tracking", -20, 100, CONFIG.primary.letter_spacing, 0.1);
+
+      slider(document.querySelector("#vignette-controls"), "Strength", "--zr-photo-vignette", 0, 100, CONFIG.photo.vignette);
+      const selectiveTabs = document.querySelector("#selective-tabs");
+      channelNames.forEach((name, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.channel = index;
+        button.title = name;
+        button.setAttribute("aria-label", name);
+        button.setAttribute("aria-pressed", index === selectedChannel ? "true" : "false");
+        button.addEventListener("click", () => selectChannel(index));
+        selectiveTabs.append(button);
+      });
+      const selective = document.querySelector("#selective-controls");
+      slider(selective, "Hue", "--zr-photo-selective-active-hue", -100, 100, 0);
+      slider(selective, "Saturation", "--zr-photo-selective-active-saturation", -100, 100, 0);
+      slider(selective, "Luminance", "--zr-photo-selective-active-luminance", -100, 100, 0);
+      CONFIG.photo.selective.forEach((value, index) => {
+        setVariable(`--zr-photo-selective-${index}-hue`, value.hue);
+        setVariable(`--zr-photo-selective-${index}-saturation`, value.saturation);
+        setVariable(`--zr-photo-selective-${index}-luminance`, value.luminance);
+      });
+      for (const input of selective.querySelectorAll("input")) {
+        input.addEventListener("input", () => {
+          const property = input.dataset.variable.split("-").at(-1);
+          setVariable(`--zr-photo-selective-${selectedChannel}-${property}`, input.value);
+        });
+      }
+      selectChannel(0);
+
+      const levels = document.querySelector("#levels-controls");
+      slider(levels, "Input Black", "--zr-photo-level-input-black", 0, 100, CONFIG.photo.levels.inputBlack);
+      slider(levels, "Midtone", "--zr-photo-level-midtone", 0, 100, CONFIG.photo.levels.midtone);
+      slider(levels, "Input White", "--zr-photo-level-input-white", 0, 100, CONFIG.photo.levels.inputWhite);
+      slider(levels, "Output Black", "--zr-photo-level-output-black", 0, 100, CONFIG.photo.levels.outputBlack);
+      slider(levels, "Output White", "--zr-photo-level-output-white", 0, 100, CONFIG.photo.levels.outputWhite);
+
+      slider(document.querySelector("#black-white-controls"), "Strength", "--zr-photo-black-and-white", 0, 100, CONFIG.photo.blackAndWhite);
+      const color = document.querySelector("#color-controls");
+      slider(color, "Saturation", "--zr-photo-saturation", -100, 100, CONFIG.photo.saturation);
+      slider(color, "Vibrance", "--zr-photo-vibrance", -100, 100, CONFIG.photo.vibrance);
+
+      const light = document.querySelector("#light-controls");
+      [
+        ["Brilliance", "brilliance"], ["Exposure", "exposure"], ["Highlights", "highlights"],
+        ["Shadows", "shadows"], ["Brightness", "brightness"], ["Contrast", "contrast"], ["Black Point", "blackPoint"]
+      ].forEach(([label, key]) => slider(light, label, `--zr-photo-${key.replace(/[A-Z]/g, match => `-${match.toLowerCase()}`)}`, -100, 100, CONFIG.photo[key]));
+
+      const filterButtons = document.querySelector("#filter-buttons");
+      filterNames.forEach(name => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = name;
+        button.dataset.filter = name;
+        button.setAttribute("aria-pressed", name === selectedFilter ? "true" : "false");
+        button.addEventListener("click", () => {
+          selectedFilter = name;
+          filterButtons.querySelectorAll("button").forEach(item => item.setAttribute("aria-pressed", item === button ? "true" : "false"));
+          scheduleRender();
+        });
+        filterButtons.append(button);
+      });
+      slider(document.querySelector("#filter-controls"), "Strength", "--zr-photo-filter-strength", 0, 100, CONFIG.photo.filterStrength);
+    }
+
+    function selectChannel(index) {
+      selectedChannel = index;
+      document.querySelectorAll("#selective-tabs button").forEach(button => button.setAttribute("aria-pressed", Number(button.dataset.channel) === index ? "true" : "false"));
+      for (const property of ["hue", "saturation", "luminance"]) {
+        const value = getVariable(`--zr-photo-selective-${index}-${property}`);
+        setVariable(`--zr-photo-selective-active-${property}`, value);
+        const input = document.querySelector(`[data-variable="--zr-photo-selective-active-${property}"]`);
+        input.value = value;
+        input.nextElementSibling.value = Math.round(value);
+      }
+    }
+
+    function photoValues() {
+      return {
+        vignette: getVariable("--zr-photo-vignette"),
+        selective: channelNames.map((_, index) => ({
+          hue: getVariable(`--zr-photo-selective-${index}-hue`),
+          saturation: getVariable(`--zr-photo-selective-${index}-saturation`),
+          luminance: getVariable(`--zr-photo-selective-${index}-luminance`)
+        })),
+        levels: {
+          inputBlack: getVariable("--zr-photo-level-input-black"),
+          midtone: getVariable("--zr-photo-level-midtone"),
+          inputWhite: getVariable("--zr-photo-level-input-white"),
+          outputBlack: getVariable("--zr-photo-level-output-black"),
+          outputWhite: getVariable("--zr-photo-level-output-white")
+        },
+        blackAndWhite: getVariable("--zr-photo-black-and-white"),
+        saturation: getVariable("--zr-photo-saturation"),
+        vibrance: getVariable("--zr-photo-vibrance"),
+        brilliance: getVariable("--zr-photo-brilliance"),
+        exposure: getVariable("--zr-photo-exposure"),
+        highlights: getVariable("--zr-photo-highlights"),
+        shadows: getVariable("--zr-photo-shadows"),
+        brightness: getVariable("--zr-photo-brightness"),
+        contrast: getVariable("--zr-photo-contrast"),
+        blackPoint: getVariable("--zr-photo-black-point"),
+        filter: selectedFilter,
+        filterStrength: getVariable("--zr-photo-filter-strength")
+      };
+    }
+
+    function drawText() {
+      primaryText.textContent = document.querySelector("#primary-input").value.toUpperCase();
+      secondaryText.textContent = document.querySelector("#secondary-input").value.toUpperCase();
+      primaryText.setAttribute("x", getVariable("--zr-primary-x"));
+      primaryText.setAttribute("y", getVariable("--zr-primary-y"));
+      primaryText.style.fontSize = `${getVariable("--zr-primary-size")}px`;
+      primaryText.style.letterSpacing = `${getVariable("--zr-primary-tracking")}px`;
+      fitText(primaryText, getVariable("--zr-primary-size"), getVariable("--zr-primary-tracking"), CONFIG.editorial ? CONFIG.editorial.divider.x - 60 : CONFIG.canvas.width * 0.86);
+      if (CONFIG.secondary) {
+        secondaryText.setAttribute("x", CONFIG.secondary.anchor_x);
+        secondaryText.setAttribute("y", CONFIG.secondary.baseline_y);
+        secondaryText.style.fontSize = `${CONFIG.secondary.font_size}px`;
+        secondaryText.style.letterSpacing = `${CONFIG.secondary.letter_spacing}px`;
+        fitText(secondaryText, CONFIG.secondary.font_size, CONFIG.secondary.letter_spacing, CONFIG.canvas.width * 0.86);
+      }
+      if (CONFIG.editorial) {
+        editorialLayer.hidden = false;
+        const divider = CONFIG.editorial.divider;
+        const dividerCenter = divider.x + divider.width / 2;
+        editorialDivider.setAttribute("x1", dividerCenter);
+        editorialDivider.setAttribute("x2", dividerCenter);
+        editorialDivider.setAttribute("y1", divider.y);
+        editorialDivider.setAttribute("y2", divider.y + divider.height);
+        editorialDivider.setAttribute("stroke-width", divider.width);
+        const diamondY = CONFIG.editorial.diamond_center_y;
+        editorialDiamond.setAttribute("d", `M ${dividerCenter} ${diamondY - 13} L ${dividerCenter + 13} ${diamondY} L ${dividerCenter} ${diamondY + 13} L ${dividerCenter - 13} ${diamondY} Z`);
+        editorialText.replaceChildren();
+        editorialText.setAttribute("x", CONFIG.editorial.list.x);
+        editorialText.style.fontSize = `${CONFIG.editorial.list.font_size}px`;
+        editorialText.style.letterSpacing = `${CONFIG.editorial.list.letter_spacing}px`;
+        CONFIG.editorial.list.lines.forEach((line, index) => {
+          const span = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+          span.setAttribute("x", CONFIG.editorial.list.x);
+          const baseline = CONFIG.editorial.list.baseline_y_by_line[index]
+            ?? CONFIG.editorial.list.baseline_y_by_line[CONFIG.editorial.list.baseline_y_by_line.length - 1];
+          span.setAttribute("y", baseline);
+          span.textContent = line;
+          editorialText.append(span);
+        });
+        const finalBaseline = CONFIG.editorial.list.baseline_y_by_line[Math.min(
+          CONFIG.editorial.list.lines.length,
+          CONFIG.editorial.list.baseline_y_by_line.length
+        ) - 1];
+        document.body.dataset.editorialFit = finalBaseline <= CONFIG.canvas.height * 0.94 ? "pass" : "fail";
+      }
+    }
+
+    function fitText(node, baseSize, baseTracking, maximumWidth) {
+      node.style.fontSize = `${baseSize}px`;
+      node.style.letterSpacing = `${baseTracking}px`;
+      const measured = node.getComputedTextLength();
+      const scale = measured > maximumWidth ? maximumWidth / measured : 1;
+      node.style.fontSize = `${baseSize * scale}px`;
+      node.style.letterSpacing = `${baseTracking * scale}px`;
+      node.dataset.fitScale = scale.toFixed(4);
+      const current = Number(document.body.dataset.textFitScale || 1);
+      const minimumScale = Math.min(current, scale);
+      document.body.dataset.textFitScale = minimumScale.toFixed(4);
+      document.body.dataset.textFit = minimumScale >= 0.55 ? "pass" : "fail";
+    }
+
+    function scheduleRender() {
+      if (framePending) return;
+      framePending = true;
+      requestAnimationFrame(() => {
+        framePending = false;
+        processor.set(photoValues());
+        drawText();
+      });
+    }
+
+    function neutralSettings(values) {
+      const clean = ZRPhotoAdjustments.defaults();
+      return JSON.stringify(values) === JSON.stringify(clean);
+    }
+
+    function verifyNeutralPixel(values) {
+      if (!neutralSettings(values)) return { status: "skipped", delta: null };
+      // Le PNG d'entrée peut porter un profil ICC que Canvas et WebGL décodent
+      // différemment. Le contrôle emploie donc une charte non profilée, puis
+      // compare la sortie neutre à ses pixels sources exacts.
+      const chart = document.createElement("canvas");
+      chart.width = 4;
+      chart.height = 2;
+      const context = chart.getContext("2d", { willReadFrequently: true });
+      const swatches = ["#102030", "#d64a46", "#4db56d", "#4775cc", "#f0c060", "#b954b5", "#dadada", "#050505"];
+      swatches.forEach((color, index) => {
+        context.fillStyle = color;
+        context.fillRect(index % chart.width, Math.floor(index / chart.width), 1, 1);
+      });
+      const expected = context.getImageData(0, 0, chart.width, chart.height).data;
+      const testCanvas = document.createElement("canvas");
+      const testProcessor = new ZRPhotoAdjustments(testCanvas);
+      testProcessor.setImage(chart);
+      testProcessor.set(ZRPhotoAdjustments.defaults());
+      const actual = new Uint8Array(expected.length);
+      testProcessor.gl.readPixels(0, 0, chart.width, chart.height, testProcessor.gl.RGBA, testProcessor.gl.UNSIGNED_BYTE, actual);
+      let delta = 0;
+      for (let y = 0; y < chart.height; y += 1) {
+        for (let x = 0; x < chart.width; x += 1) {
+          const sourceOffset = (y * chart.width + x) * 4;
+          const glOffset = ((chart.height - y - 1) * chart.width + x) * 4;
+          for (let channel = 0; channel < 3; channel += 1) {
+            delta = Math.max(delta, Math.abs(expected[sourceOffset + channel] - actual[glOffset + channel]));
+          }
+        }
+      }
+      return { status: delta <= 1 ? "pass" : "fail", delta };
+    }
+
+    function verifyEveryEffect() {
+      const chart = document.createElement("canvas");
+      chart.width = 8;
+      chart.height = 8;
+      const context = chart.getContext("2d");
+      const swatches = ["#d64a46", "#d5b94a", "#4db56d", "#50b8bd", "#4775cc", "#b954b5", "#b5a78e", "#34383f"];
+      swatches.forEach((color, index) => {
+        context.fillStyle = color;
+        context.fillRect(index, 0, 1, 8);
+      });
+      const testCanvas = document.createElement("canvas");
+      const testProcessor = new ZRPhotoAdjustments(testCanvas);
+      testProcessor.setImage(chart);
+      const read = values => {
+        testProcessor.set(values);
+        const pixels = new Uint8Array(chart.width * chart.height * 4);
+        testProcessor.gl.readPixels(0, 0, chart.width, chart.height, testProcessor.gl.RGBA, testProcessor.gl.UNSIGNED_BYTE, pixels);
+        return pixels;
+      };
+      const baseline = read(ZRPhotoAdjustments.defaults());
+      const differs = values => {
+        const pixels = read(values);
+        return pixels.some((value, index) => index % 4 !== 3 && Math.abs(value - baseline[index]) > 1);
+      };
+      const cases = [
+        ["vignette", { vignette: 100 }],
+        ["blackAndWhite", { blackAndWhite: 100 }],
+        ["saturation", { saturation: 100 }],
+        ["vibrance", { vibrance: 100 }],
+        ["brilliance", { brilliance: 100 }],
+        ["exposure", { exposure: 100 }],
+        ["highlights", { highlights: 100 }],
+        ["shadows", { shadows: 100 }],
+        ["brightness", { brightness: 100 }],
+        ["contrast", { contrast: 100 }],
+        ["blackPoint", { blackPoint: 100 }],
+        ["levelInputBlack", { levels: { inputBlack: 20 } }],
+        ["levelMidtone", { levels: { midtone: 70 } }],
+        ["levelInputWhite", { levels: { inputWhite: 80 } }],
+        ["levelOutputBlack", { levels: { outputBlack: 20 } }],
+        ["levelOutputWhite", { levels: { outputWhite: 80 } }]
+      ];
+      for (let index = 0; index < 6; index += 1) {
+        const selective = ZRPhotoAdjustments.defaults().selective;
+        selective[index].luminance = 100;
+        cases.push([`selective${index}`, { selective }]);
+      }
+      filterNames.slice(1).forEach(filter => cases.push([`filter${filter}`, { filter, filterStrength: 100 }]));
+      const failures = cases.filter(([, values]) => !differs(values)).map(([name]) => name);
+      const zeroStrength = read({ filter: "Vivid", filterStrength: 0 });
+      if (zeroStrength.some((value, index) => Math.abs(value - baseline[index]) > 1)) failures.push("filterStrengthZero");
+      return { status: failures.length ? "fail" : "pass", failures, count: cases.length + 1 };
+    }
+
+    function initialize() {
+      makeControls();
+      document.querySelector("#primary-input").value = CONFIG.primary_text;
+      document.querySelector("#secondary-input").value = CONFIG.secondary_text;
+      document.querySelector("#primary-input").addEventListener("input", scheduleRender);
+      document.querySelector("#secondary-input").addEventListener("input", scheduleRender);
+      root.style.setProperty("--zr-primary-family", CONFIG.primary.font_family);
+      root.style.setProperty("--zr-primary-weight", CONFIG.primary.font_weight);
+      root.style.setProperty("--zr-text-color", CONFIG.primary.color);
+      root.style.setProperty("--zr-text-shadow", CONFIG.primary.shadow);
+      source.src = CONFIG.background;
+      source.addEventListener("load", async () => {
+        processor.setImage(source);
+        processor.set(photoValues());
+        drawText();
+        await document.fonts.load(`${CONFIG.primary.font_size}px "${CONFIG.primary.font_family}"`, CONFIG.primary_text || "M");
+        await document.fonts.ready;
+        document.body.dataset.fontReady = document.fonts.check(`${CONFIG.primary.font_size}px "${CONFIG.primary.font_family}"`, CONFIG.primary_text || "M") ? "pass" : "fail";
+        drawText();
+        const test = verifyNeutralPixel(photoValues());
+        const effectsTest = verifyEveryEffect();
+        document.body.dataset.neutralTest = test.status;
+        document.body.dataset.effectsTest = effectsTest.status;
+        document.body.dataset.effectsCount = effectsTest.count;
+        status.textContent = test.status === "pass" ? `Fond neutre vérifié, écart maximal ${test.delta}` : `Test neutre ${test.status}`;
+        if (effectsTest.status !== "pass") status.textContent += `, effets en échec : ${effectsTest.failures.join(", ")}`;
+        document.body.dataset.renderReady = "true";
+      }, { once: true });
+      source.addEventListener("error", () => { throw new Error(`Fond introuvable : ${CONFIG.background}`); }, { once: true });
+    }
+
+    document.querySelector("#reset").addEventListener("click", () => location.reload());
+    document.querySelector("#copy").addEventListener("click", async () => {
+      const payload = {
+        template_id: CONFIG.template_id,
+        primary_text: document.querySelector("#primary-input").value,
+        secondary_text: document.querySelector("#secondary-input").value,
+        primary: {
+          anchor_x: getVariable("--zr-primary-x"), baseline_y: getVariable("--zr-primary-y"),
+          font_size: getVariable("--zr-primary-size"), letter_spacing: getVariable("--zr-primary-tracking")
+        },
+        photo: photoValues()
+      };
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      status.textContent = "Valeurs copiées";
+    });
+    if (new URLSearchParams(location.search).has("render")) root.classList.add("render");
+    initialize();
+  </script>
+</body>
+</html>

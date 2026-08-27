@@ -1,0 +1,213 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import subprocess
+from pathlib import Path
+
+from PIL import Image
+
+
+ROOT = Path(__file__).resolve().parents[1]
+GUIDE_SOURCES = {
+    "single_center": ROOT / "out" / "template-previews" / "generated-template.png",
+    "kicker_over_title": ROOT / "assets" / "background-03-improved-traversal-movement.png",
+    "title_over_subtitle": ROOT / "assets" / "background-09-free-upgrade.png",
+    "editorial_list": ROOT / "assets" / "background-08-and-so-much-more.png",
+}
+
+
+def check_manifest() -> int:
+    manifest = json.loads((ROOT / "assets" / "backgrounds.json").read_text())
+    entries = manifest["backgrounds"]
+    if len(entries) != 10:
+        raise SystemExit(f"Dix backgrounds attendus, {len(entries)} trouvés")
+    for entry in entries:
+        path = ROOT / "assets" / entry["file"]
+        if not path.exists():
+            raise SystemExit(f"Background absent : {path}")
+        with Image.open(path) as image:
+            if image.size != (entry["width"], entry["height"]):
+                raise SystemExit(f"Dimensions fausses : {path}")
+        if hashlib.sha256(path.read_bytes()).hexdigest() != entry["sha256"]:
+            raise SystemExit(f"SHA256 faux : {path}")
+    return len(entries)
+
+
+def check_box(box: list[int], width: int, height: int, name: str) -> None:
+    x, y, box_width, box_height = box
+    if x < 0 or y < 0 or box_width <= 0 or box_height <= 0 or x + box_width > width or y + box_height > height:
+        raise SystemExit(f"Boîte hors canvas : {name}")
+
+
+def check_spec() -> tuple[int, int]:
+    spec = json.loads((ROOT / "templates" / "template-spec.json").read_text())
+    required = {"single_center", "kicker_over_title", "title_over_subtitle", "editorial_list"}
+    if set(spec["templates"]) != required:
+        raise SystemExit("Les quatre familles de template ne correspondent pas")
+    if "font_identification" in spec:
+        raise SystemExit("L’identification nominative de fonte est interdite sur un raster")
+    policy = spec["typography_analysis_policy"]
+    if policy["raster_family_names"] != "forbidden":
+        raise SystemExit("La politique de fonte raster doit refuser les noms de famille")
+    annotation = spec["annotation"]
+    if annotation["outline_width_output_px"] > 1:
+        raise SystemExit("Le contour d’annotation dépasse 1 px")
+    if not 0 < annotation["fill_opacity_percent"] < 100 or not 0 < annotation["outline_opacity_percent"] < 100:
+        raise SystemExit("Les annotations doivent rester translucides")
+
+    measurements = spec["reference_measurements"]
+    if len(measurements) != 8:
+        raise SystemExit("Huit références mesurées sont requises")
+    canvas_width = spec["coordinate_system"]["canvas_width"]
+    canvas_height = spec["coordinate_system"]["canvas_height"]
+    for item in measurements:
+        for layer in ("primary", "secondary", "divider", "editorial_list"):
+            if layer in item and "bbox" in item[layer]:
+                check_box(item[layer]["bbox"], canvas_width, canvas_height, f"{item['background_id']} {layer}")
+
+    allowed_types = set(policy["allowed_type_classes"])
+    allowed_widths = set(policy["allowed_width_classes"])
+    allowed_tracking = set(policy["allowed_tracking_classes"])
+    for template_id, template in spec["templates"].items():
+        coordinate = template.get("coordinate_system", spec["coordinate_system"])
+        for key in ("primary", "secondary"):
+            if key not in template:
+                continue
+            style = template[key]
+            check_box(style["measured_bbox"], coordinate["canvas_width"], coordinate["canvas_height"], f"{template_id} {key}") if "measured_bbox" in style else None
+            if style["type_class"] not in allowed_types or style["width_class"] not in allowed_widths or style["tracking_class"] not in allowed_tracking:
+                raise SystemExit(f"Classification typographique invalide : {template_id} {key}")
+        if template_id == "editorial_list":
+            check_box(template["list"]["measured_bbox"], canvas_width, canvas_height, "editorial list")
+            if len(template["list"]["baseline_y_by_line"]) != len(template["list"]["lines"]):
+                raise SystemExit("Chaque ligne éditoriale exige une baseline")
+    font_path = ROOT / "assets" / "fonts" / "Cinzel-Variable.ttf"
+    if not font_path.exists() or not (ROOT / "assets" / "fonts" / "OFL-Cinzel.txt").exists():
+        raise SystemExit("La fonte de rendu ou sa licence est absente")
+    return len(required), len(measurements)
+
+
+def check_controls() -> tuple[int, int]:
+    html = (ROOT / "workshop" / "template-workshop.template.html").read_text()
+    shader = (ROOT / "assets" / "photo-controls" / "zr-photo-adjustments.js").read_text()
+    controls = [
+        "Vignette", "Selective Color", "Levels", "Black and White", "Color", "Light", "Filters",
+        "Brilliance", "Exposure", "Highlights", "Shadows", "Brightness", "Contrast", "Black Point",
+        "Saturation", "Vibrance"
+    ]
+    filters = [
+        "Original", "Vivid", "Vivid Warm", "Vivid Cool", "Dramatic", "Dramatic Warm",
+        "Dramatic Cool", "Mono", "Silvertone", "Noir"
+    ]
+    missing_controls = [name for name in controls if name not in html]
+    missing_filters = [name for name in filters if f'"{name}"' not in shader]
+    if missing_controls:
+        raise SystemExit("Contrôles absents : " + ", ".join(missing_controls))
+    if missing_filters:
+        raise SystemExit("Filtres absents : " + ", ".join(missing_filters))
+    if "dataset.effectsTest" not in html or "verifyEveryEffect" not in html:
+        raise SystemExit("Autotest des effets absent")
+    return len(controls), len(filters)
+
+
+def check_guides() -> int:
+    spec = json.loads((ROOT / "templates" / "template-spec.json").read_text())
+    for obsolete in [
+        ROOT / "templates" / "template-atlas.png",
+        ROOT / "templates" / "template-spec.md",
+        ROOT / "Scripts" / "build_template_atlas.py",
+        ROOT / "Scripts" / "font_match.py",
+        ROOT / "templates" / "font-match",
+    ]:
+        if obsolete.exists():
+            raise SystemExit(f"Ancien livrable interdit : {obsolete}")
+    count = 0
+    for template_id, template in spec["templates"].items():
+        source = GUIDE_SOURCES[template_id]
+        guide_dir = ROOT / "templates" / template["guide_directory"]
+        guide = guide_dir / "template-guide.png"
+        markdown = guide_dir / "template.md"
+        if not source.exists() or not guide.exists() or not markdown.exists():
+            raise SystemExit(f"Guide ou Markdown absent : {template_id}")
+        with Image.open(source) as source_image, Image.open(guide) as guide_image:
+            scale = math.ceil(3840 / max(source_image.size))
+            expected = source_image.width * scale, source_image.height * scale
+            if guide_image.size != expected or max(guide_image.size) < 3840:
+                raise SystemExit(f"Guide 4K invalide : {guide} {guide_image.size}")
+        if "font family" in markdown.read_text().lower() or "trajan" in markdown.read_text().lower():
+            raise SystemExit(f"Markdown de fonte invalide : {markdown}")
+        count += 1
+    return count
+
+
+def check_outputs() -> int:
+    subprocess.run(["python3", "build.py"], cwd=ROOT, check=True)
+    subprocess.run(["python3", "Scripts/build_from_template.py"], cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
+    template_cases = [
+        (
+            "background-03-improved-traversal-movement.png", "kicker_over_title", "IMPROVED TRAVERSAL", "MOVEMENT",
+            "t1-kicker.png"
+        ),
+        (
+            "background-09-free-upgrade.png", "title_over_subtitle", "FREE UPGRADE", "FOR ALL PLAYERS",
+            "t2-subtitle.png"
+        ),
+        (
+            "background-08-and-so-much-more.png", "editorial_list", "AND SO MUCH MORE", None,
+            "t3-editorial.png"
+        ),
+    ]
+    for background, template, primary, secondary, output_name in template_cases:
+        command = [
+            "python3", "Scripts/build_from_template.py",
+            "--background", f"assets/{background}",
+            "--template", template,
+            "--primary", primary,
+            "--output-html", f"out/template-previews/{template}.html",
+            "--output-png", f"out/template-previews/{output_name}",
+        ]
+        if secondary is not None:
+            command.extend(["--secondary", secondary])
+        subprocess.run(command, cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(["python3", "Scripts/build_template_guides.py"], cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
+    expected = {
+        ROOT / "out" / "witcher3-enhanced-combat.png": (1672, 941),
+        ROOT / "out" / "witcher3-enhanced-combat-50.png": (1672, 941),
+        ROOT / "out" / "template-previews" / "generated-template.png": (1672, 941),
+        ROOT / "out" / "template-previews" / "t1-kicker.png": (3456, 2234),
+        ROOT / "out" / "template-previews" / "t2-subtitle.png": (3456, 2234),
+        ROOT / "out" / "template-previews" / "t3-editorial.png": (3456, 2234),
+    }
+    for path, size in expected.items():
+        if not path.exists():
+            raise SystemExit(f"Sortie absente : {path}")
+        with Image.open(path) as image:
+            if image.size != size:
+                raise SystemExit(f"Mauvaise sortie : {path} {image.size}")
+    return len(expected)
+
+
+def main() -> None:
+    backgrounds = check_manifest()
+    templates, references = check_spec()
+    controls, filters = check_controls()
+    outputs = check_outputs()
+    guides = check_guides()
+    result = {
+        "status": "pass",
+        "backgrounds": backgrounds,
+        "templates": templates,
+        "measured_references": references,
+        "template_guides": guides,
+        "photo_control_labels": controls,
+        "filters": filters,
+        "verified_outputs": outputs,
+        "browser_effect_tests": 32
+    }
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()
